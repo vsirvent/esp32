@@ -9,123 +9,77 @@
 #include "esp_check.h"
 
 
-const float AudioDriver::ScaleFloat2Int = 8388608.f; // 2^23
-const float AudioDriver::ScaleInt2Float = 0.0000000004656612873077392578125f; // 1 / 2^31
-
-esp_err_t AudioDriver::setup(int fs, int channelCount,
+esp_err_t AudioDriver::I2SSetUp(int fs,
                        int bitClkPin, int lrClkPin, int mClkPin,
                        int dataOutPin, int dataInPin, i2s_port_t i2sPort) {
-	int mclk_fs = 384;
 	esp_err_t ret = ESP_OK;
-	setI2sPort(i2sPort);
-	ESP_GOTO_ON_ERROR(setFormat(fs, channelCount, I2S_BITS_PER_SAMPLE_32BIT, 
-					            I2S_COMM_FORMAT_STAND_I2S, CODEC_I2S_ALIGN, mclk_fs),
-								end, GetTag(), "setFormat error");
-	ESP_GOTO_ON_ERROR(setPins(bitClkPin, lrClkPin, mClkPin, dataOutPin, dataInPin),
-					  end, GetTag(),"setPins() error");
-	ESP_GOTO_ON_ERROR(start(),
-					  end, GetTag(), "start() error");
-end:
-	return (ret);
-}
-
-void AudioDriver::setI2sPort(i2s_port_t i2s_port) {
-	this->i2sPort = i2s_port;
-}
-
-
-esp_err_t AudioDriver::setFormat(int fs, int channelCount, i2s_bits_per_sample_t bitsPerSample, i2s_comm_format_t format, int alignment, int mclkFactor) {
+	this->i2sPort = i2sPort;
 	this->fs = fs;
 	this->channelCount = channelCount;
 	
 	static const i2s_config_t i2s_config = {
 			.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_TX),
 			.sample_rate = (uint32_t)fs,
-			.bits_per_sample = bitsPerSample,
+			.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
 			.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-			.communication_format = format,
-			.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1, // high interrupt priority
+			.communication_format = I2S_COMM_FORMAT_STAND_I2S,
+			.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM, // high interrupt priority
 			.dma_buf_count = 2,
-			.dma_buf_len = AudioDriver::BufferSize,
+			.dma_buf_len = buffer_size,
 			.use_apll = true,
 			.tx_desc_auto_clear = true,
-			.fixed_mclk = fs * (int)mclkFactor,
-			.mclk_multiple = I2S_MCLK_MULTIPLE_DEFAULT,
-			.bits_per_chan = I2S_BITS_PER_CHAN_DEFAULT //means same than bits_per_sample
+			.mclk_multiple = I2S_MCLK_MULTIPLE_256			
 	};
 
-	switch (alignment) {
-		case CODEC_I2S_ALIGN: lshift = 8; break;
-		case CODEC_LJ_RJ_ALIGN: lshift = 0; break;
-		default: lshift = 8; break;
-	}
-
-	esp_err_t err = i2s_driver_install(i2sPort, &i2s_config, 0, NULL);
-
-	return err;
-}
+	ESP_GOTO_ON_ERROR(i2s_driver_install(i2sPort, &i2s_config, 0, NULL),
+				   	  end, GetTag(), "i2s_driver_install error");	
 
 
-esp_err_t AudioDriver::setPins(int bitClkPin, int lrClkPin, int mClkPin, int dataOutPin, int dataInPin) {
+	// enable I2S master clock on GPIO0 for master mode
 	static const i2s_pin_config_t pin_config = {
+			.mck_io_num = mClkPin,
 			.bck_io_num = bitClkPin,
 			.ws_io_num = lrClkPin,
 			.data_out_num = dataOutPin,
 			.data_in_num = dataInPin
 	};
-	esp_err_t err = i2s_set_pin(i2sPort, &pin_config);
-	return err;
+	ESP_LOGI(GetTag(), "setPins: mck_io_num = %d, bck_io_num =%d, ws_io_num = %d, dataOutPin = %d, dataInPin = %d",
+	 					mClkPin, bitClkPin, lrClkPin, dataOutPin, dataInPin);
+	ESP_GOTO_ON_ERROR(i2s_set_pin(i2sPort, &pin_config),
+					 end, GetTag(), "i2s_set_pin error");	
+	
+	ESP_LOGI(GetTag(), "I2S Initialized");
+end:
+	return (ret);
 }
 
 
 esp_err_t AudioDriver::start() {
-
 	esp_err_t ret = ESP_OK;
-	// enable I2S master clock on GPIO0 for master mode
-	PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO0_U, FUNC_GPIO0_CLK_OUT1);
-	//WRITE_PERI_REG(PIN_CTRL, READ_PERI_REG(PIN_CTRL) & 0xFFFFFFF0);
-	SET_PERI_REG_BITS(PIN_CTRL, CLK_OUT1, 0, CLK_OUT1_S);
-
-	ESP_GOTO_ON_ERROR(i2s_set_sample_rates(i2sPort, fs),
+	ESP_GOTO_ON_ERROR(i2s_start(i2sPort),
 					  end, GetTag(), "i2s_set_sample_rates failed");
-
-	ESP_GOTO_ON_ERROR(i2s_zero_dma_buffer(i2sPort),
-					  end, GetTag(), "i2s_zero_dma_buffer failed");
-	
-	// I2S buffers
-	i2sBufferSize =  channelCount * AudioDriver::BufferSize;
-
-	i2sReadBuffer = (int32_t*) calloc(i2sBufferSize, sizeof(int32_t));
-	i2sWriteBuffer = (int32_t*) calloc(i2sBufferSize, sizeof(int32_t));
-
-	// wait for stable clock
-	vTaskDelay(200);
-end:
+end:					  
  	return ret;
 }
 
 
-int AudioDriver::readBlock() {
-	uint bytesRead = 0;
+esp_err_t AudioDriver::readBlock(uint16_t* buffer, int size, size_t* read) {
+	size_t to_read = (size * sizeof(uint16_t));
+	int err = i2s_read(i2sPort, (void*) buffer, to_read, read, portMAX_DELAY);
 
-	int err = i2s_read(i2sPort, (void*) i2sReadBuffer, i2sBufferSize * sizeof(int32_t), &bytesRead, 500);
-
-	if (err || bytesRead < (i2sBufferSize * sizeof(int32_t))) {
-		printf("I2S read error: ");
-		printf("%d\n", bytesRead);
+	if (err != ESP_OK || *read < to_read) {
+		ESP_LOGE(GetTag(), "I2S read error: read = %d, to_read = %d\n", *read, to_read);
 	}
 	return err;
 }
 
 
-int AudioDriver::writeBlock() {
-	uint bytesWritten = 0;
+esp_err_t AudioDriver::writeBlock(const int16_t* buffer, int size, size_t* write) {
+	size_t to_write = (size * sizeof(int16_t));
+	int err = i2s_write(i2sPort, (const char *) buffer, to_write, write, portMAX_DELAY);
 
-	int err = i2s_write(i2sPort, (const char *) i2sWriteBuffer, channelCount * AudioDriver::BufferSize * sizeof(int32_t), &bytesWritten, 500);
-
-	if (bytesWritten < 1) {
-		printf("I2S write error: ");
-		printf("%d\n",bytesWritten);
+	if (err != ESP_OK || *write < to_write) {
+		ESP_LOGE(GetTag(), "I2S write error: write = %d, to_write = %d\n", *write, to_write);
 	}
 	return err;
 }

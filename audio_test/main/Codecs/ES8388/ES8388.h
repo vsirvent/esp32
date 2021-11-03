@@ -29,17 +29,17 @@ class ES8388: public AudioDriver {
 public:
 
 	typedef enum {
-		SAMPLE_RATE_8000	= 0x0000,
-		SAMPLE_RATE_11052	= 0x1000,
-		SAMPLE_RATE_12000	= 0x2000,
-		SAMPLE_RATE_16000	= 0x3000,
-		SAMPLE_RATE_22050	= 0x4000,
-		SAMPLE_RATE_24000	= 0x5000,
-		SAMPLE_RATE_32000	= 0x6000,
-		SAMPLE_RATE_44100	= 0x7000,
-		SAMPLE_RATE_48000	= 0x8000,
-		SAMPLE_RATE_96000	= 0x9000,
-		SAMPLE_RATE_192000	= 0xa000,
+		SAMPLE_RATE_8000	= 8000,
+		SAMPLE_RATE_11052	= 11052,
+		SAMPLE_RATE_12000	= 12000,
+		SAMPLE_RATE_16000	= 16000,
+		SAMPLE_RATE_22050	= 22050,
+		SAMPLE_RATE_24000	= 24000,
+		SAMPLE_RATE_32000	= 32000,
+		SAMPLE_RATE_44100	= 44100,
+		SAMPLE_RATE_48000	= 48000,
+		SAMPLE_RATE_96000	= 48000,
+		SAMPLE_RATE_192000	= 192000
 	} I2sSampleRate_t;
 
 	typedef enum {
@@ -209,23 +209,17 @@ public:
 	virtual ~ES8388();
 
 	// Convenience method
-	int setup(int fs, 
+	int Setup(int fs, 
 	          int channelCount, 
 			  int bitClkPin, int lrClkPin, int mClkPin,
 			  int dataOutPin, int dataInPin, 
 			  int enablePin, i2s_port_t i2sPort);
 
-	void setI2CPins(int i2c_scl = GPIO_NUM_32, int i2c_data = GPIO_NUM_33);
+	void SetI2CPins(int i2c_scl = GPIO_NUM_32, int i2c_data = GPIO_NUM_33);
 
-	// Initialize codec with give sample rate
-	// @return True on success, false on failure.
-	bool begin(int fs);
-
-	bool SetI2sSampleRate(I2sSampleRate_t rate);
+	bool SetI2sSampleRate(int mclk_frequency, I2sSampleRate_t sample_frequency);
 	bool SetI2sFormat(Mode_t mode, I2sFormat_t format);
-	bool SetI2sWordSize(I2sWordSize_t size);
-	bool SetI2sClock(I2SClock_t clock);
-
+	
 	bool SetBitsPerSample(Mode_t mode, Bits_t bits_length);
 	bool Start(Mode_t mode);
 	bool Stop(Mode_t mode);
@@ -252,7 +246,7 @@ protected:
 
 	bool WriteReg(uint8_t reg, uint8_t data);
 	bool ReadReg(uint8_t reg, uint8_t* data);
-	
+
 	int enable_pin;
 
 	int I2C_SCL;
