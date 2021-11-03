@@ -341,7 +341,8 @@ bool ES8388::Stop(Mode_t mode)
         return res;
     }
     if (mode == MODE_DAC || mode == MODE_ADC_DAC) {
-        res |= WriteReg(ES8388_DACPOWER, 0x00);        
+        res |= WriteReg(ES8388_DACPOWER, 0x00);
+        //res |= SetVoiceMute(true); 
     }
     if (mode == MODE_ADC || mode == MODE_ADC_DAC) {
         res |= WriteReg(ES8388_ADCPOWER, 0xFF);  //power down adc and line in

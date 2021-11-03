@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <math.h>
+#include <memory.h>
 #include <esp_check.h>
 #include <esp_log.h>
 #include "Codecs/ES8388/ES8388.h"
@@ -24,11 +25,14 @@ extern const int16_t music_pcm_end[]   asm("_binary_canon_pcm_end");
 extern "C" {
 static const char* TAG = "MainApp";
 
+SemaphoreHandle_t data_mutex;
+
 int app_main(void)
 {
   const int fs = 16000;
   esp_err_t ret = ESP_OK;
-  
+  data_mutex = xSemaphoreCreateMutex();
+
   ESP_LOGI(TAG,"Audio test init");
   
   ES8388 codec;
@@ -39,27 +43,26 @@ int app_main(void)
               GPIO_PA_EN, I2S_NUM_0);
   	
   codec.SetDACOutput(ES8388::DACOutput_t::DAC_OUTPUT_ALL, true); 
-  codec.SetADCInput(ES8388::ADCInput_t::ADC_INPUT_LINPUT1_RINPUT1);
+  codec.SetADCInput(ES8388::ADCInput_t::ADC_INPUT_LINPUT2_RINPUT2);
   codec.SetGain(ES8388::Mode_t::MODE_ADC_DAC, 0, 0);
   codec.SetDACVolume(100);
   codec.SetMicGain(ES8388::MicGain_t::MIC_GAIN_6DB);
   codec.Start(ES8388::Mode_t::MODE_ADC_DAC);
   codec.SetPAPower(false);  
 
-  int16_t * data = new int16_t[32000];
-  for (int i = 0; i < 16000; i++) {
-    double step = (2.0*M_PI*(i*440.0))/16000.0;
-    data[i*2] = (int)(4095.0*sin(step));
-    data[i*2+1] = data[i*2];
-  }
+  int16_t* data = new int16_t[512];
+  memset(data, 0, 1024);
 
+  int i = 0;
   while (true) {
       /* Write music to earphone */
+      size_t read = 0;
       size_t write = 0;
-      ESP_LOGI(TAG, "Sending music file...");
-      //codec.writeBlock(data, read, &write);
-      codec.writeBlock(music_pcm_start, (music_pcm_end - music_pcm_start), &write);
-      ESP_LOGI(TAG, "Music sent");      
+      codec.readBlock(data, 512, &read);
+      if (++i%1000 == 0) {
+        ESP_LOGI(TAG, "read %d samples", read);
+      }
+      codec.writeBlock(data, read, &write);      
   }
   return ret;
 }
