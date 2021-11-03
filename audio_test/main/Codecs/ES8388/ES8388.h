@@ -1,27 +1,8 @@
-/*
-	ES8388 - An ES8388 Codec driver library for Arduino
-	
-	This program is free software: you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation, either version 3 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#ifndef ES8388_H
-#define ES8388_H
+#ifndef _CODEC_ES8388_H
+#define _CODEC_ES8388_H
 
 #include <inttypes.h>
-
-#include "driver/i2c.h"
-
+#include <driver/i2c.h>
 #include "../AudioDriver.h"
 
 class ES8388: public AudioDriver {
@@ -29,17 +10,17 @@ class ES8388: public AudioDriver {
 public:
 
 	typedef enum {
-		SAMPLE_RATE_8000	= 0x0000,
-		SAMPLE_RATE_11052	= 0x1000,
-		SAMPLE_RATE_12000	= 0x2000,
-		SAMPLE_RATE_16000	= 0x3000,
-		SAMPLE_RATE_22050	= 0x4000,
-		SAMPLE_RATE_24000	= 0x5000,
-		SAMPLE_RATE_32000	= 0x6000,
-		SAMPLE_RATE_44100	= 0x7000,
-		SAMPLE_RATE_48000	= 0x8000,
-		SAMPLE_RATE_96000	= 0x9000,
-		SAMPLE_RATE_192000	= 0xa000,
+		SAMPLE_RATE_8000	= 8000,
+		SAMPLE_RATE_11052	= 11052,
+		SAMPLE_RATE_12000	= 12000,
+		SAMPLE_RATE_16000	= 16000,
+		SAMPLE_RATE_22050	= 22050,
+		SAMPLE_RATE_24000	= 24000,
+		SAMPLE_RATE_32000	= 32000,
+		SAMPLE_RATE_44100	= 44100,
+		SAMPLE_RATE_48000	= 48000,
+		SAMPLE_RATE_96000	= 48000,
+		SAMPLE_RATE_192000	= 192000
 	} I2sSampleRate_t;
 
 	typedef enum {
@@ -209,41 +190,33 @@ public:
 	virtual ~ES8388();
 
 	// Convenience method
-	int setup(int fs, 
-	          int channelCount, 
-			  int bitClkPin, int lrClkPin, int mClkPin,
-			  int dataOutPin, int dataInPin, 
-			  int enablePin, i2s_port_t i2sPort);
+	int Setup(int fs, int i2c_clk, int i2c_data, int bitClkPin, int lrClkPin, int mClkPin,
+                  int dataOutPin, int dataInPin, int enablePin, i2s_port_t i2s_port);
 
-	void setI2CPins(int i2c_scl = GPIO_NUM_32, int i2c_data = GPIO_NUM_33);
-
-	// Initialize codec with give sample rate
-	// @return True on success, false on failure.
-	bool begin(int fs);
-
-	bool SetI2sSampleRate(I2sSampleRate_t rate);
+	bool SetI2sSampleRate(int mclk_frequency, I2sSampleRate_t sample_frequency);
 	bool SetI2sFormat(Mode_t mode, I2sFormat_t format);
-	bool SetI2sWordSize(I2sWordSize_t size);
-	bool SetI2sClock(I2SClock_t clock);
-
 	bool SetBitsPerSample(Mode_t mode, Bits_t bits_length);
+	
 	bool Start(Mode_t mode);
 	bool Stop(Mode_t mode);
-	bool SetVoiceMute(bool enable);
-	bool GetVoiceMute(bool* enable);
-	bool SetVoiceVolume(int volume);
-	bool GetVoiceVolume(int* volume);
+	
+	bool SetVoiceEnabled(bool enable);
+	bool GetVoiceEnabled(bool* enable);
+	
+	bool SetDACVolume(int volume);
+	bool GetDACVolume(int* volume);
 	bool SetDACOutput(DACOutput_t output, bool enable);
+	
 	bool SetADCInput(ADCInput_t input);
+	
+	bool SetGain(Mode_t mode, int volume, int dot);
 	bool SetMicGain(MicGain_t gain);
-	bool SetPAPower(bool enable);
-	bool SetVolume(Mode_t mode, int volume, int dot);
 
+	bool SetPAPower(bool enable);
+	
 	// Dumpt the current register configuration to serial.
 	void DumpRegisters();
 	
-	uint16_t GetDeviceID();
-
 	virtual const char* GetTag() override {
 		return TAG;
 	}
@@ -252,11 +225,11 @@ protected:
 
 	bool WriteReg(uint8_t reg, uint8_t data);
 	bool ReadReg(uint8_t reg, uint8_t* data);
-	
+
 	int enable_pin;
 
-	int I2C_SCL;
-	int I2C_SDA;
+	int i2c_clk;
+	int i2c_data;
     
 	static const char* TAG;
 };

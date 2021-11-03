@@ -8,5 +8,6 @@ set(includes
     Codecs)
 
 idf_component_register(SRCS ${src}
-                       INCLUDE_DIRS ${includes})
+                       INCLUDE_DIRS ${includes}
+                       EMBED_FILES "canon.pcm")
 

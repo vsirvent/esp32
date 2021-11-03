@@ -1,251 +1,64 @@
-/*      
-  This example is ripped off the AC101 Arduino library for the AIThinker ESP32-A1S: 
-  https://github.com/Yveaux/AC101
-      
-  AC101 Codec driver library example.
-  Uses the ESP32-A1S module with integrated AC101 codec, mounted on the ESP32 Audio Kit board:
-  https://wiki.ai-thinker.com/esp32-audio-kit
-  
-  Copyright (C) 2019, Ivo Pullens, Emmission
-  
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+#include <stdlib.h>
+#include <math.h>
+#include <esp_check.h>
+#include <esp_log.h>
+#include "Codecs/ES8388/ES8388.h"
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+#define I2C_CLK                     32
+#define I2S_DATA                    33
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-
-#include <Codecs/ES8388/ES8388.h>
-
-#define I2S_BCK_PIN                 27
-#define I2S_LRCLK_PIN               26
-#define I2S_DOUT_PIN                25
 #define I2S_DIN_PIN             	  35
+#define I2S_DOUT_PIN                26
+#define I2S_LRCLK_PIN               25
+#define I2S_BCK_PIN                 27
 #define I2S_MCLK_PIN                0
+
 #define PIN_PLAY                    (23)      // KEY 4
 #define PIN_VOL_UP                  (18)      // KEY 5
 #define PIN_VOL_DOWN                (5)       // KEY 6
 #define GPIO_PA_EN                  (21)
-extern "C" {
-void app_main(void)
-{
-  const int fs = 96000;
-  const int channelCount = 2;
 
-  printf("Audio test init\n");
+extern const int16_t music_pcm_start[] asm("_binary_canon_pcm_start");
+extern const int16_t music_pcm_end[]   asm("_binary_canon_pcm_end");
+
+extern "C" {
+static const char* TAG = "MainApp";
+
+int app_main(void)
+{
+  const int fs = 16000;
+  esp_err_t ret = ESP_OK;
+  
+  ESP_LOGI(TAG,"Audio test init");
+  
   ES8388 codec;
-  codec.setup(fs, channelCount, 
+  codec.Setup(fs, 
+              I2C_CLK, I2S_DATA,
               I2S_BCK_PIN, I2S_LRCLK_PIN, I2S_MCLK_PIN,
               I2S_DOUT_PIN, I2S_DIN_PIN,
               GPIO_PA_EN, I2S_NUM_0);
-  codec.SetDACOutput(ES8388::DACOutput_t::DAC_OUTPUT_LOUT2, true);
-  codec.SetDACOutput(ES8388::DACOutput_t::DAC_OUTPUT_ROUT2, true);
-  codec.SetPAPower(true);
-  codec.SetVolume(ES8388::Mode_t::MODE_ADC, 0, 0);
-  codec.Start(ES8388::Mode_t::MODE_ADC);
-  
-  vTaskDelay(0xffffff);
-  return;
-}
-}
-#if 0
-static AC101 i2sCodec;
-YummyDSP dsp;
-WaveSynth synth;
-FilterNode lp;
-FilterNode hp;
+  	
+  codec.SetDACOutput(ES8388::DACOutput_t::DAC_OUTPUT_ALL, true); 
+  codec.SetGain(ES8388::Mode_t::MODE_DAC, 0, 0);
+  codec.SetDACVolume(100);
+  codec.Start(ES8388::Mode_t::MODE_DAC);
+  codec.SetPAPower(false);  
 
-// I2S
-const int fs = 96000;
-const int channelCount = 2;
-
-static uint8_t volume = 10;
-const uint8_t volume_step = 2;
-int note = 0;
-int arpCnt = 0;
-
-int debounce = 0;
-
-void audioTask(void *);
-
-
-void audio_setup()
-{
-  printf("Connect to AC101 codec... ");
-  delay(100);
-  // setup audio codec
-  i2sCodec.setup(fs, channelCount, I2S_BCK_PIN, I2S_LRCLK_PIN, I2S_DOUT_PIN, I2S_DIN_PIN, GPIO_PA_EN);
-
-  i2sCodec.SetVolumeSpeaker(volume);
-  i2sCodec.SetVolumeHeadphone(volume);
-  //  ac.DumpRegisters();
-
-  // Enable amplifier
-  pinMode(GPIO_PA_EN, OUTPUT);
-  digitalWrite(GPIO_PA_EN, HIGH);
-
-  // Configure keys on ESP32 Audio Kit board
-  pinMode(PIN_PLAY, INPUT_PULLUP);
-  pinMode(PIN_VOL_UP, INPUT_PULLUP);
-  pinMode(PIN_VOL_DOWN, INPUT_PULLUP);
-
-  printf("Use KEY5/KEY6 for volume Up/Down\n");
-
-  // setup audio lib
-  dsp.begin(fs);
-
-  synth.begin(fs);
-  synth.noteOff();
-  synth.setWaveform(SAW);
-  synth.setGlide(0);
-  synth.setAttack(50);
-  synth.setSustain(0.6);
-
-  // setup some filter nodes
-  lp.begin(fs, channelCount);
-  lp.setupFilter(FilterNode::LPF, 5000, 1.7);
-
-  hp.begin(fs, channelCount);
-  hp.setupFilter(FilterNode::HPF, 20, 1.0);
-
-  // add nodes to audio processing tree
-  // Synth => hp => lp => I2S out
-  // dsp.addNode(&hp);
-  dsp.addNode(&lp);
-
-
-  // run audio in dedicated task on cpu core 1
-  xTaskCreatePinnedToCore(audioTask, "audioTask", 10000, NULL, 10, NULL, 1);
-  // run control task on another cpu  core with lower priority
-  printf("\nSetup done ");
-
-}
-
-bool pressed( const int pin )
-{
-  if (millis() > (debounce + 500))
-  {
-    if (digitalRead(pin) == LOW)
-    {
-      debounce = millis();
-      return true;
-    }
+  int16_t * data = new int16_t[32000];
+  for (int i = 0; i < 16000; i++) {
+    double step = (2.0*M_PI*(i*440.0))/16000.0;
+    data[i*2] = (int)(4095.0*sin(step));
+    data[i*2+1] = data[i*2];
   }
-  return false;
-}
-
-
-void audioTask(void *) {
-
-  printf("\nAudio task");
-
-  float sample = 0;
 
   while (true) {
-
-    for (int i = 0; i < AudioDriver::BufferSize; i++) {
-
-      float sampleMono = synth.getSample();
-
-      for (int ch = 0; ch < channelCount; ch++) {
-
-        // upmix to stereo
-        sample = sampleMono;
-
-        sample = dsp.process(sample, ch);
-
-        i2sCodec.writeSample(sample, i, ch);
-      }
-    }
-
-    i2sCodec.writeBlock();
+      /* Write music to earphone */
+      size_t write = 0;
+      ESP_LOGI(TAG, "Sending music file...");
+      codec.writeBlock(data, 16000, &write);
+      //codec.writeBlock(music_pcm_start, (music_pcm_end - music_pcm_start), &write);
+      ESP_LOGI(TAG, "Music sent");      
   }
-  vTaskDelete(NULL);
-}
-
-extern "C" {
-void app_main(void)
-{
-  printf("Audio test init\n");
-  audio_setup();
-  printf("Setup done\n");
-  while (true) {
-    bool updateVolume = false;
-
-    delay(2);
-    printf("LOOP\n");
-    //  uncomment to change low pass filter frequency with a pot
-    //    lp.updateFilter(pot * 10000.f);
-
-    // playin some notes
-    int len = 100;
-    arpCnt++;
-    switch (note) {
-      case 0: {
-          if (arpCnt > len) {
-            arpCnt = 0;
-            synth.note(40);
-            note++;
-          }
-        }
-      case 1: {
-          if (arpCnt > len) {
-            arpCnt = 0;
-            synth.note(47);
-            note++;
-          }
-        }
-      case 2: {
-          if (arpCnt > len) {
-            arpCnt = 0;
-            synth.note(43);
-            note++;
-          }
-        }
-      case 3: {
-          if (arpCnt > len) {
-            arpCnt = 0;
-            synth.note(47);
-            note = 0;
-          }
-        }
-    }
-
-    if (pressed(PIN_VOL_UP))
-    {
-      if (volume <= (63 - volume_step))
-      {
-        // Increase volume
-        volume += volume_step;
-        updateVolume = true;
-      }
-    }
-    if (pressed(PIN_VOL_DOWN))
-    {
-      if (volume >= volume_step)
-      {
-        // Decrease volume
-        volume -= volume_step;
-        updateVolume = true;
-      }
-    }
-    if (updateVolume)
-    {
-      // Volume change requested
-      printf("Volume %d\n", volume);
-      i2sCodec.SetVolumeSpeaker(volume);
-      i2sCodec.SetVolumeHeadphone(volume);
-    }
-  }
+  return ret;
 }
 }
-
-#endif
