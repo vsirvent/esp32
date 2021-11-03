@@ -60,13 +60,14 @@ end:
  	return ret;
 }
 
-esp_err_t AudioDriver::readBlock(uint16_t* buffer, int size, size_t* read) {
-	size_t to_read = (size * sizeof(uint16_t));
+esp_err_t AudioDriver::readBlock(int16_t* buffer, int size, size_t* read) {
+	size_t to_read = (size * sizeof(int16_t));
 	int err = i2s_read(i2s_port, (void*) buffer, to_read, read, portMAX_DELAY);
 
 	if (err != ESP_OK || *read < to_read) {
 		ESP_LOGE(GetTag(), "I2S read error: read = %d, to_read = %d\n", *read, to_read);
 	}
+	*read /= sizeof(int16_t);
 	return err;
 }
 
@@ -77,5 +78,6 @@ esp_err_t AudioDriver::writeBlock(const int16_t* buffer, int size, size_t* write
 	if (err != ESP_OK || *write < to_write) {
 		ESP_LOGE(GetTag(), "I2S write error: write = %d, to_write = %d\n", *write, to_write);
 	}
+	*write /= sizeof(int16_t);
 	return err;
 }

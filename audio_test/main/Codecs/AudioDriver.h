@@ -16,7 +16,7 @@ public:
 	          int bitClkPin, int lrClkPin, int mClkPin,
 			  int dataOutPin, int dataInPin, i2s_port_t i2sPort);
 
-	esp_err_t readBlock(uint16_t* buffer, int size, size_t* read);
+	esp_err_t readBlock(int16_t* buffer, int size, size_t* read);
 	esp_err_t writeBlock(const int16_t* buffer, int size, size_t* write);
 
 	virtual const char* GetTag() = 0;

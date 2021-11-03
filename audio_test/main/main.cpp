@@ -39,9 +39,11 @@ int app_main(void)
               GPIO_PA_EN, I2S_NUM_0);
   	
   codec.SetDACOutput(ES8388::DACOutput_t::DAC_OUTPUT_ALL, true); 
-  codec.SetGain(ES8388::Mode_t::MODE_DAC, 0, 0);
+  codec.SetADCInput(ES8388::ADCInput_t::ADC_INPUT_LINPUT1_RINPUT1);
+  codec.SetGain(ES8388::Mode_t::MODE_ADC_DAC, 0, 0);
   codec.SetDACVolume(100);
-  codec.Start(ES8388::Mode_t::MODE_DAC);
+  codec.SetMicGain(ES8388::MicGain_t::MIC_GAIN_6DB);
+  codec.Start(ES8388::Mode_t::MODE_ADC_DAC);
   codec.SetPAPower(false);  
 
   int16_t * data = new int16_t[32000];
@@ -55,8 +57,8 @@ int app_main(void)
       /* Write music to earphone */
       size_t write = 0;
       ESP_LOGI(TAG, "Sending music file...");
-      codec.writeBlock(data, 16000, &write);
-      //codec.writeBlock(music_pcm_start, (music_pcm_end - music_pcm_start), &write);
+      //codec.writeBlock(data, read, &write);
+      codec.writeBlock(music_pcm_start, (music_pcm_end - music_pcm_start), &write);
       ESP_LOGI(TAG, "Music sent");      
   }
   return ret;
