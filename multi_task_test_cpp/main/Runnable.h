@@ -158,7 +158,14 @@ namespace mia {
          * and destruction of the task.
          */
         class Runnable {
+            public:
             
+            enum eCore {
+                CORE0 = 0,
+                CORE1 = 1,
+                CORE_ANY = 3,
+            };
+
             private:
 
             TaskHandle_t handle = NULL;
@@ -166,22 +173,26 @@ namespace mia {
             int priority;
             int stack_size;
             bool end = false;
+            eCore affinity;
             mutable Mutex mutex;
             Event end_event;
             
             public:
 
+            
             /**
              * @brief Construct a new Runnable object
              * 
              * @param task_name The FreeRTOS task name
              * @param priority The task priority [0, configMAX_PRIORITIES - 1]
              * @param stack_size The stack size in words (4 bytes).
+             * @param affinity CPU core to run task [ CORE0 | CORE1 | CORE_ANY ]
              */
-            Runnable(const std::string& task_name, int priority, int stack_size) {
+            Runnable(const std::string& task_name, int priority, int stack_size, eCore affinity = eCore::CORE_ANY) {
                 this->task_name = task_name;
                 this->priority = priority;
                 this->stack_size = stack_size;
+                this->affinity = affinity;
             }
 
             /**
@@ -194,7 +205,13 @@ namespace mia {
 
             bool IsRunning() const {
                 AutoMutexLock lock(&mutex);
-                return (xTaskGetHandle(task_name.c_str()) != NULL);
+                eTaskState state;
+                if (handle != NULL) {
+                    state = eTaskGetState(handle);
+                }else{
+                    state = eTaskState::eInvalid;
+                }
+                return (state != eTaskState::eDeleted && state != eTaskState::eInvalid);
             }
 
             std::string GetName() const {
@@ -215,12 +232,22 @@ namespace mia {
                     end_event.Reset();
                     //Start task in FreeRTOS
                     //task runs StartFunction()
-                    ret = xTaskCreate(Runnable::StartFunction,  
-                                     task_name.c_str(),        
-                                     stack_size,     
-                                     (void*)this,    
-                                     priority,
-                                     &handle);
+                    if (affinity == eCore::CORE_ANY) {
+                        ret = xTaskCreate(Runnable::StartFunction,  
+                                        task_name.c_str(),        
+                                        stack_size,     
+                                        (void*)this,    
+                                        priority,
+                                        &handle);
+                    }else{
+                        ret = xTaskCreatePinnedToCore(Runnable::StartFunction,  
+                                        task_name.c_str(),        
+                                        stack_size,     
+                                        (void*)this,    
+                                        priority,
+                                        &handle,
+                                        affinity);
+                    }
                 }
                 return ret; 
             }
@@ -243,9 +270,12 @@ namespace mia {
              */
             void Stop() {
                 if (IsRunning()) {
-                    //Activate end flag
                     mutex.Wait();
+                    //Get current handle, when stopping task handle 
+                    //is set to NULL by the task, so we need to save 
+                    //it in a temportal variable
                     TaskHandle_t h = handle;
+                    //Activate end flag so task end Run() loop
                     end = true;
                     mutex.Release();
                     //End event is signaled in NotifyEnd() by the task
@@ -258,7 +288,7 @@ namespace mia {
                     {
                         eTaskState state = eTaskGetState(h);
                         done = (state == eTaskState::eDeleted || state == eTaskState::eInvalid);
-                        //Wait 1 tick to give task execution time.
+                        //Wait 1 tick to give task execution time to end
                         vTaskDelay(1);
                     }while(!done);
                 }
@@ -322,6 +352,7 @@ namespace mia {
                     if (run_class->Initialize()) {
                         //While not end flag loop Run()
                         while (!run_class->GetEnd()) {
+                            //Execute Run(), if returns false task ends
                             if (!run_class->Run()) {
                                 break;
                             }

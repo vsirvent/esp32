@@ -11,8 +11,6 @@ extern "C" {
 
 using namespace mia::rtos;
 
-#define STACK_SIZE 10*1024
-
 struct data_t {
     float n;
     int i;
@@ -20,10 +18,14 @@ struct data_t {
 
 class TaskA: public Runnable {
 private:
-    Event* task_event;
+  
+    static const int STACK_SIZE = 10*1024; //10 kbytes stack size
+    Event* task_event = NULL;
+
 public:
 
-    TaskA(Event* event, const std::string& task_name, int priority): Runnable(task_name, priority, STACK_SIZE) 
+    TaskA(Event* event, const std::string& task_name, int priority): 
+        Runnable(task_name, priority, STACK_SIZE, eCore::CORE0) 
     {
         this->task_event = event;
     }
@@ -49,7 +51,6 @@ protected:
         return true;
     }
 };
-
 
 void app_main(void)
 {
