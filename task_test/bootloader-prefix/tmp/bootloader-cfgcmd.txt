@@ -1,0 +1,1 @@
+cmd='/usr/bin/cmake;-DSDKCONFIG=/home/vsirvent/src/mia/task_test/sdkconfig;-DIDF_PATH=/home/vsirvent/src/esp-idf;-DIDF_TARGET=esp32;-DPYTHON_DEPS_CHECKED=1;-DPYTHON=python;-DEXTRA_COMPONENT_DIRS=/home/vsirvent/src/esp-idf/components/bootloader;-DPROJECT_SOURCE_DIR=/home/vsirvent/src/mia/task_test;-DLEGACY_INCLUDE_COMMON_HEADERS=;-GUnix Makefiles;<SOURCE_DIR><SOURCE_SUBDIR>'

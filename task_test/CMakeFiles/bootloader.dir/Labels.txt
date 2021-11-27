@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/home/vsirvent/src/mia/task_test/CMakeFiles/bootloader
+/home/vsirvent/src/mia/task_test/CMakeFiles/bootloader.rule
+/home/vsirvent/src/mia/task_test/CMakeFiles/bootloader-complete.rule
+/home/vsirvent/src/mia/task_test/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/home/vsirvent/src/mia/task_test/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/home/vsirvent/src/mia/task_test/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/home/vsirvent/src/mia/task_test/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
+/home/vsirvent/src/mia/task_test/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/home/vsirvent/src/mia/task_test/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/home/vsirvent/src/mia/task_test/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule

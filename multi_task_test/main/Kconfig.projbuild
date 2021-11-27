@@ -1,0 +1,19 @@
+menu "MIA - Configuration"
+
+    config LED1_GPIO
+        int "LED GPIO number 1"
+        range 0 34
+        default 22
+        help
+            GPIO number (IOxx).
+            Check esp32-audio-kit_v2.2_sch.pdf schematics for the led!
+
+    config LED2_GPIO
+        int "LED GPIO number 2"
+        range 0 34
+        default 19
+        help
+            GPIO number (IOxx).
+            Check esp32-audio-kit_v2.2_sch.pdf schematics for the led!
+
+endmenu
