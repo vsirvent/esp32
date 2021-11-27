@@ -18,68 +18,73 @@ struct data_t {
     int i;
 };
 
+class TaskA: public Runnable {
+private:
+    Event* task_event;
+public:
 
-Mutex mutex;
-
-void TaskFunction( void *pvParameters )
-{
-    struct data_t* data = (struct data_t*)pvParameters;
-    while (true)
+    TaskA(Event* event, const std::string& task_name, int priority): Runnable(task_name, priority, STACK_SIZE) 
     {
-        AutoMutexLock lock(&mutex);
-        data->i++;
-        printf("[%s] task ++ i = %d\n", pcTaskGetName(NULL), data->i);
-        if (data->i > 0xffffff) {
-            data->i = 0;
-        }
-    }
-    vTaskDelete( NULL );
-}
-
-void TaskFunctionB( void *pvParameters )
-{
-    struct data_t* data = (struct data_t*)pvParameters;
-    while (true)
-    {
-        data->i--;
-        mutex.Wait();
-        printf("[%s] task -- i = %d\n", pcTaskGetName(NULL), data->i);
-        if (data->i > 0xffffff) {
-            data->i = 0;
-        }
-        mutex.Release();
+        this->task_event = event;
     }
 
-    vTaskDelete( NULL );
-}
+protected:
+
+    bool Initialize() override
+    {
+        printf("TaskA[%s]::Init wait\n", GetName().c_str());
+        vTaskDelay(100);
+        task_event->Signal();
+        return true;
+    }
+
+    void Dispose() override
+    {
+        printf("TaskA[%s]::End\n", GetName().c_str());
+    }
+
+    bool Run() override
+    {
+        //printf("TaskA[%s]::Running...\n", GetName().c_str());
+        return true;
+    }
+};
+
 
 void app_main(void)
 {
-
-    BaseType_t xReturned;
-    TaskHandle_t xHandle = NULL;
-    volatile struct data_t data;
-    data.n = 0.0f;
-    data.i = 0;
-
-    /* Create the task, storing the handle. */
-    xReturned = xTaskCreate(
-                    TaskFunction,       /* Function that implements the task. */
-                    "TaskA",          /* Text name for the task. */
-                    STACK_SIZE,      /* Stack size in words, not bytes. 200 words*/
-                    (void*)&data,    /* Parameter passed into the task. */
-                    1,/* Priority at which the task is created. */
-                    &xHandle );      /* Used to pass out the created task's handle. */
-
-    
-    xReturned = xTaskCreate(
-                    TaskFunctionB,       /* Function that implements the task. */
-                    "TaskB",          /* Text name for the task. */
-                    STACK_SIZE,      /* Stack size in words, not bytes. 200 words*/
-                    (void*)&data,    /* Parameter passed into the task. */
-                    1,/* Priority at which the task is created. */
-                    &xHandle );      /* Used to pass out the created task's handle. */
-    while (true) {}
+    Event event;
+    printf("Creation tasks...\n");
+    TaskA a1(&event, "my_task_a1", 1);
+    TaskA a2(&event, "my_task_a2", 1);
+    TaskA a3(&event, "my_task_a3", 1);
+    while (true) {
+        printf("%d: Running tasks a1...\n", xTaskGetTickCount());
+        event.Reset();
+        a1.Start();
+        printf("%d: Wait tasks a1 init...\n", xTaskGetTickCount());
+        event.Wait();
+        printf("%d: Running tasks a2...\n", xTaskGetTickCount());
+        event.Reset();
+        a2.Start();
+        printf("%d: Wait tasks a2 init...\n", xTaskGetTickCount());
+        event.Wait();
+        printf("%d: Running tasks a2...\n", xTaskGetTickCount());
+        event.Reset();
+        a3.Start();
+        printf("%d: Wait tasks a3 init...\n", xTaskGetTickCount());
+        event.Wait();
+        printf("%d: Waiting...\n", xTaskGetTickCount());
+        vTaskDelay(1000);
+        printf("%d: Stopping tasks a1...\n", xTaskGetTickCount());
+        a1.Stop();
+        printf("Stopping tasks a2...\n");
+        a2.Stop();
+        printf("Stopping tasks a3...\n");
+        a3.Stop();
+        printf("Stop DONE\n");
+        vTaskDelay(1000);
+    }
 }
 
 }

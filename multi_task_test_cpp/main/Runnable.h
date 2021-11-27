@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -24,7 +25,7 @@ namespace mia {
              * 
              */
             Mutex() {
-                mutex = xSemaphoreCreateMutex();
+                mutex = xSemaphoreCreateRecursiveMutex();
             }
 
             /**
@@ -49,7 +50,7 @@ namespace mia {
                 }else{
                     timeout_ticks = timeout_msec/portTICK_PERIOD_MS;
                 }
-                return xSemaphoreTake(mutex, timeout_ticks);
+                return xSemaphoreTakeRecursive(mutex, timeout_ticks);
             }
 
             /**
@@ -59,7 +60,7 @@ namespace mia {
              * @return false Operation failed.
              */
             bool Release() {
-                return xSemaphoreGive(mutex);
+                return xSemaphoreGiveRecursive(mutex);
             }
         };
 
@@ -157,6 +158,7 @@ namespace mia {
          * and destruction of the task.
          */
         class Runnable {
+            
             private:
 
             TaskHandle_t handle = NULL;
@@ -164,7 +166,7 @@ namespace mia {
             int priority;
             int stack_size;
             bool end = false;
-            Mutex mutex;
+            mutable Mutex mutex;
             Event end_event;
             
             public:
@@ -190,6 +192,14 @@ namespace mia {
                 Stop();
             }
 
+            bool IsRunning() const {
+                AutoMutexLock lock(&mutex);
+                return (xTaskGetHandle(task_name.c_str()) != NULL);
+            }
+
+            std::string GetName() const {
+                return task_name;
+            }
             /**
              * @brief Run task.
              * 
@@ -199,17 +209,18 @@ namespace mia {
             bool Start() {
                 bool ret = false;
                 AutoMutexLock lock(&mutex);
-                //Check if task is already runnin
-                if (handle == NULL) {
+                //Check if task is already running
+                if (!IsRunning()) {
                     end = false;
                     end_event.Reset();
-                    ret = xTaskCreate(
-                        Runnable::StartFunction,  
-                        task_name.c_str(),        
-                        stack_size,     
-                        (void*)this,    
-                        priority,
-                        &handle);
+                    //Start task in FreeRTOS
+                    //task runs StartFunction()
+                    ret = xTaskCreate(Runnable::StartFunction,  
+                                     task_name.c_str(),        
+                                     stack_size,     
+                                     (void*)this,    
+                                     priority,
+                                     &handle);
                 }
                 return ret; 
             }
@@ -219,9 +230,9 @@ namespace mia {
              * 
              */
             void StopAsync() {
-                AutoMutexLock lock(&mutex);
-                //Set end flag, task will stop but we don't wait for it
-                if (handle != NULL) {
+                if (IsRunning()) {
+                    AutoMutexLock lock(&mutex);
+                    //Set end flag, task will stop but we don't wait for it
                     end = true;
                 }
             }
@@ -231,19 +242,30 @@ namespace mia {
              * 
              */
             void Stop() {
-                //Stop task asynchronously and wait for end event.
-                StopAsync();
-                end_event.Wait();
-                //Wait for vTaskDelete
-                //to be called by the task and resources
-                //to be free in FreeRTOS scheduler.
-                while (xTaskGetHandle(task_name.c_str()) != NULL) 
-                {
-                    //Wait 1 tick to give task execution time.
-                    vTaskDelay(1);
+                if (IsRunning()) {
+                    //Activate end flag
+                    mutex.Wait();
+                    TaskHandle_t h = handle;
+                    end = true;
+                    mutex.Release();
+                    //End event is signaled in NotifyEnd() by the task
+                    end_event.Wait();
+                    //Wait for vTaskDelete
+                    //to be called by the task and resources
+                    //to be free in FreeRTOS scheduler.
+                    bool done = false;
+                    do 
+                    {
+                        eTaskState state = eTaskGetState(h);
+                        done = (state == eTaskState::eDeleted || state == eTaskState::eInvalid);
+                        //Wait 1 tick to give task execution time.
+                        vTaskDelay(1);
+                    }while(!done);
                 }
             }
-            
+
+            protected:
+
             /**
              * @brief Initialization method executed by task
              * during task start process.
@@ -265,35 +287,49 @@ namespace mia {
             /**
              * @brief Abstract method where task operation is defined.
              * 
+             * @return False if method fails and stop task.
              */
-            virtual void Run() = 0;
+            virtual bool Run() = 0;
 
             private:
 
+            /**
+             * @brief Get the End flag. Mutex used as memory barrier.
+             * 
+             * @return End flag. 
+             */
+            bool GetEnd() const {
+                AutoMutexLock lock(&mutex);
+                return end;
+            }
+
+            /**
+             * @brief Notify ending task and reset task handle.
+             * 
+             */
+            void NotifyEnd() {
+                //Reset handle, mutex used as memory barrier
+                AutoMutexLock lock(&mutex);
+                handle = NULL;
+                end_event.Signal();
+            }
+
             static void StartFunction(void* params) {
-                //Runnable is passed as parameter
+                //Runnable object is passed as parameter
                 Runnable* run_class = (Runnable*)(params);
                 if (run_class != NULL) {
                     //Task executes Initialize once before Run() loop.
                     if (run_class->Initialize()) {
-                        run_class->mutex.Wait();
-                        bool end = run_class->end;
-                        run_class->mutex.Release();
                         //While not end flag loop Run()
-                        while (!end) {
-                            run_class->Run();
-                            run_class->mutex.Wait();
-                            end = run_class->end;
-                            run_class->mutex.Release();
+                        while (!run_class->GetEnd()) {
+                            if (!run_class->Run()) {
+                                break;
+                            }
                         }
                         //Dispose task objects
                         run_class->Dispose();
+                        run_class->NotifyEnd();
                     }
-                    //Reset handle, mutex used as memory barrier
-                    run_class->mutex.Wait();
-                    run_class->handle = NULL;
-                    run_class->mutex.Release();
-                    run_class->end_event.Signal();
                 }
                 //Delete ourselves
                 vTaskDelete(NULL);
